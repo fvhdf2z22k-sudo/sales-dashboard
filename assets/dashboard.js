@@ -223,7 +223,7 @@ function render(){
  if(com.missing.length)$('period-info').innerHTML+='<div class="notice warn">채널·연도 자료 누락: '+esc(com.missing.join(', '))+'. 합산 비교가 불완전할 수 있습니다.</div>';
  const beyond=outsideCoverage(c);
  if(beyond)$('period-info').innerHTML+='<div class="notice warn">선택 기간이 일부 파일의 실제 거래일 범위를 벗어납니다. 미판매와 자료 누락을 구분할 수 없으므로 공통 기간 비교를 권장합니다.</div>';
- ({overview,drivers,products,structure,quality,malls,report}[tab]||overview)(c);
+ ({overview,drivers,products,structure,quality,malls,report,season}[tab]||overview)(c);
  }catch(e){$('error').textContent=e.message;$('view').innerHTML='';setExport([],[]);}
 }
 $('tabs').onclick=e=>{if(e.target.dataset.tab){tab=e.target.dataset.tab;render();}};
@@ -618,3 +618,47 @@ function internalPublicView(){
 renderPublicControls();loadPublishedData();
 if(!IS_EDITOR){setInterval(()=>{if(!document.hidden)loadPublishedData();},60000);window.addEventListener('focus',()=>loadPublishedData());}
 window.addEventListener('beforeunload',e=>{if(IS_EDITOR&&draftDirty){e.preventDefault();e.returnValue='';}});
+
+const SEASON_SUMMER=['냉감','쿨','시어서커','여름'];
+const SEASON_WINTER=['구스','극세사','겨울','울','양모'];
+const SEASON_NAMES={summer:'여름',winter:'겨울',mixed:'여름·겨울 혼합',other:'키워드 미일치'};
+let seasonSelection='summer',seasonScope='bedding',seasonOrder='sales';
+function seasonMatchName(value){
+ const name=String(value??'').normalize('NFKC').toLowerCase();
+ const summer=SEASON_SUMMER.filter(k=>name.includes(k));
+ // '울'은 소재명만 분류하도록 명백한 다른 단어 속의 울을 먼저 제외한다.
+ const woolText=name.replace(/겨울|서울|방울|거울|저울|울트라|울산|울릉|울타리/g,' ');
+ const winter=SEASON_WINTER.filter(k=>k==='울'?woolText.includes(k):name.includes(k));
+ return {summer,winter,keywords:[...summer,...winter],group:summer.length&&winter.length?'mixed':summer.length?'summer':winter.length?'winter':'other'};
+}
+function seasonScopeRows(rows,scope=seasonScope){return rows.filter(r=>r.mid==='침구/커튼/카페트'&&(scope==='all-bedding'||r.sub==='침구'));}
+function seasonTake(rows,selection=seasonSelection){return rows.filter(r=>{const g=seasonMatchName(r.name).group;return selection==='all'?g!=='other':g===selection;});}
+function seasonAnalysis(c,selection=seasonSelection,scope=seasonScope){
+ const baseA=seasonScopeRows(c.a,scope),baseB=seasonScopeRows(c.b,scope),a=seasonTake(baseA,selection),b=seasonTake(baseB,selection);
+ const groups=['summer','winter','mixed','other'].map(key=>{const aa=baseA.filter(r=>seasonMatchName(r.name).group===key),bb=baseB.filter(r=>seasonMatchName(r.name).group===key);return {key,a:sum(aa),b:sum(bb),qa:sum(aa,'qty'),qb:sum(bb,'qty'),rowsA:aa.length,rowsB:bb.length};});
+ return {baseA,baseB,a,b,groups,ra:sum(a),rb:sum(b),qa:sum(a,'qty'),qb:sum(b,'qty')};
+}
+function season(c){
+ const m=seasonAnalysis(c),{a,b,ra,rb,qa,qb}=m,diff=rb-ra;
+ const sort=rows=>rows.sort(seasonOrder==='down'?(x,y)=>x.diff-y.diff:seasonOrder==='up'?(x,y)=>y.diff-x.diff:(x,y)=>y.b-x.b);
+ const dim=key=>{const rows=sort(compare(a,b,key));return table(['항목',c.p+'년 매출',c.y+'년 매출','증감액','증감률','전년 수량','당년 수량'],rows.map(r=>[esc(key==='channel'?cname(r.key):r.key),won(r.a),won(r.b),`<span class="${cls(r.diff)}">${signed(r.diff)}</span>`,percent(ratio(r.a,r.b)),won(r.qa),won(r.qb)]));};
+ const products=sort(compare(a,b,'productKey'));
+ const hits=rows=>[...new Set(rows.flatMap(r=>seasonMatchName(r.name).keywords))].join(', ')||'—';
+ const rowGroups=rows=>[...new Set(rows.map(r=>SEASON_NAMES[seasonMatchName(r.name).group]))].join(', ')||'—';
+ const productRows=products.map(r=>[esc(r.sample.name),esc(r.sample.brand),cname(r.sample.channel),won(r.a),won(r.b),`<span class="${cls(r.diff)}">${signed(r.diff)}</span>`,percent(ratio(r.a,r.b)),won(r.qa)+' → '+won(r.qb),r.qa>0?won(r.a/r.qa):'—',r.qb>0?won(r.b/r.qb):'—',esc(hits(r.rowsA)),esc(hits(r.rowsB))]);
+ const keywords=[...SEASON_SUMMER,...SEASON_WINTER].map(keyword=>{const aa=a.filter(r=>seasonMatchName(r.name).keywords.includes(keyword)),bb=b.filter(r=>seasonMatchName(r.name).keywords.includes(keyword));return {keyword,a:sum(aa),b:sum(bb),qa:sum(aa,'qty'),qb:sum(bb,'qty')};});
+ const baseRevenueA=sum(m.baseA),baseRevenueB=sum(m.baseB),shareA=baseRevenueA>0?ra/baseRevenueA*100:null,shareB=baseRevenueB>0?rb/baseRevenueB*100:null;
+ $('view').innerHTML=panel('시즌상품 · 상품명 키워드 분석',`<div class="toolbar"><label>시즌<select id="season-choice">${[['summer','여름 상품 (혼합 제외)'],['winter','겨울 상품 (혼합 제외)'],['mixed','여름·겨울 키워드 혼합'],['all','전체 시즌상품 (중복 없이)']].map(([v,l])=>`<option value="${v}" ${seasonSelection===v?'selected':''}>${l}</option>`).join('')}</select></label><label>분석 범위<select id="season-scope"><option value="bedding" ${seasonScope==='bedding'?'selected':''}>침구 소분류만</option><option value="all-bedding" ${seasonScope==='all-bedding'?'selected':''}>침구/커튼/카페트 전체</option></select></label><label>브랜드·쇼핑몰·상품 정렬<select id="season-order">${[['sales','당년 매출 큰 순'],['down','감소액 큰 순'],['up','증가액 큰 순']].map(([v,l])=>`<option value="${v}" ${seasonOrder===v?'selected':''}>${l}</option>`).join('')}</select></label><button id="season-reset-filter">상단 필터를 침구 전체로</button></div><p><b>여름:</b> ${SEASON_SUMMER.join(', ')}<br><b>겨울:</b> ${SEASON_WINTER.join(', ')}</p><div class="notice">상단 채널·중분류·소분류·기간·비교 기준을 반영합니다. 상품명에서 키워드를 찾으며 판매월로 시즌을 정하지 않습니다. 양 시즌 키워드가 함께 있으면 혼합으로 분리해 중복 합산하지 않습니다.</div><small>울은 겨울·서울·방울·거울·저울·울트라·울산·울릉·울타리 속의 문자를 제외하고 소재 키워드로 찾습니다. 키워드 분류는 실제 소재·용도의 확정이 아니므로 상품별 매칭 단어를 확인하세요. 상품명 정보가 없는 행은 미일치로 남습니다.</small>`)+
+ (!m.baseA.length&&!m.baseB.length?'<div class="notice warn">현재 상단 필터와 분석 범위에 해당하는 침구 자료가 없습니다. 침실가구·매트리스 등을 선택했다면 위의 침구 전체 필터 버튼을 눌러 주세요.</div>':'')+
+ `<div class="cards">${kpi('선택 시즌 당년 매출',won(rb)+'원',`<span class="${cls(diff)}">${percent(ratio(ra,rb))} · ${signed(diff)}원</span>`)}${kpi('선택 시즌 판매량',won(qb)+'개',`${won(qa)}개 → ${won(qb)}개 · ${percent(ratio(qa,qb))}`)}${kpi('평균 판매단가',won(qb>0?rb/qb:null)+'원',`${won(qa>0?ra/qa:null)}원 → ${won(qb>0?rb/qb:null)}원`)}${kpi('분석 범위 내 매출 비중',shareB===null?'—':shareB.toFixed(1)+'%',`${c.p}년 ${shareA===null?'—':shareA.toFixed(1)+'%'} · ${c.y}년 ${shareB===null?'—':shareB.toFixed(1)+'%'}`)}</div>`+
+ panel('여름·겨울·혼합·미일치 실적',`<small>각 행은 중복되지 않습니다. 합계는 현재 분석 범위의 전체 실적과 일치합니다. 음수·0원 조정 행도 제외하지 않습니다.</small>`+table(['시즌 분류',c.p+'년 매출',c.y+'년 매출','증감액','증감률','전년 수량','당년 수량','당년 매출 비중'],m.groups.map(r=>[SEASON_NAMES[r.key],won(r.a),won(r.b),signed(r.b-r.a),percent(ratio(r.a,r.b)),won(r.qa),won(r.qb),baseRevenueB>0?(r.b/baseRevenueB*100).toFixed(1)+'%':'—'])))+
+ panel('선택 시즌 일별 매출 · '+c.label,'<div class="chart"><canvas id="season-daily"></canvas></div>')+
+ `<div class="grid">${panel('선택 시즌 브랜드별 실적',dim('brand'))}${panel('선택 시즌 쇼핑몰별 실적',dim('mall'))}</div>`+
+ panel('선택 시즌 상품별 실적','<small>선택 시즌으로 분류된 판매 행만 비교합니다. 전년에 해당 시즌의 행이 없으면 0원으로 표시되며, 신규 출시·단종을 의미하지 않습니다. 같은 상품이라도 상품명·시즌 키워드가 바뀌면 전체 상품 매출 증감과 다를 수 있습니다.</small>'+table(['상품명','브랜드','채널',c.p+'년 매출',c.y+'년 매출','증감액','증감률','전년→당년 수량','전년 평균단가','당년 평균단가','전년 매칭 키워드','당년 매칭 키워드'],productRows))+
+ panel('선택 시즌 키워드별 실적',`<small>한 상품명에 냉감·여름 등 여러 키워드가 있으면 각 키워드에 표시됩니다. 이 표는 서로 중복되므로 행을 합산하지 마세요.</small>`+table(['키워드',c.p+'년 매출',c.y+'년 매출','증감액','전년 수량','당년 수량'],keywords.map(r=>[r.keyword,won(r.a),won(r.b),signed(r.b-r.a),won(r.qa),won(r.qb)])));
+ $('season-choice').onchange=e=>{seasonSelection=e.target.value;render();};$('season-scope').onchange=e=>{seasonScope=e.target.value;render();};$('season-order').onchange=e=>{seasonOrder=e.target.value;render();};
+ $('season-reset-filter').onclick=()=>{const wanted='침구/커튼/카페트';if(!Array.from($('section').options).some(o=>o.value===wanted)){$('error').textContent='선택한 채널에 침구/커튼/카페트 자료가 없습니다.';return;}$('section').value=wanted;updateSubcategories();$('subcategory').value='all';render();};
+ const labels=[],va=[],vb=[];for(let t=Date.parse(c.s);t<=Date.parse(c.e);t+=DAY_MS){const dt=new Date(t).toISOString().slice(0,10),pd=shiftDate(c.ps,(t-Date.parse(c.s))/DAY_MS);labels.push(dt.slice(5)+' ↔ '+pd.slice(5));va.push(sum(a.filter(r=>r.date===pd)));vb.push(sum(b.filter(r=>r.date===dt)));}
+ chart('season-daily',labels,[{label:String(c.p),data:va},{label:String(c.y),data:vb}],'line');
+ setExport(['선택시즌','분석범위','당년시작일','당년종료일','전년시작일','전년종료일','상품명','브랜드','채널','상품코드','전년시즌분류','당년시즌분류','전년매칭키워드','당년매칭키워드','전년매출','당년매출','증감액','전년수량','당년수량','전년평균단가','당년평균단가'],products.map(r=>[seasonSelection==='all'?'전체 시즌상품':SEASON_NAMES[seasonSelection],seasonScope==='bedding'?'침구 소분류만':'침구/커튼/카페트 전체',c.s,c.e,c.ps,c.pe,r.sample.name,r.sample.brand,cname(r.sample.channel),r.sample.pid||r.sample.sid||'',rowGroups(r.rowsA),rowGroups(r.rowsB),hits(r.rowsA),hits(r.rowsB),r.a,r.b,r.diff,r.qa,r.qb,r.qa>0?r.a/r.qa:'',r.qb>0?r.b/r.qb:'']));
+}
