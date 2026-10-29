@@ -33,11 +33,14 @@ with sync_playwright() as p:
  page.locator('#price-summary-table tbody tr').nth(1).locator('button').click();assert page.locator('#price-band').input_value()=='b1'
  for membership,contains in [('prior',True),('current',False),('union',True)]:
   page.select_option('#price-membership',membership);rows=export('price-products-csv');assert any(r['상품코드']=='move' for r in rows)==contains
+ page.select_option('#price-product-mode','down');chosen=export('price-products-csv');mover=next(r for r in chosen if r['상품코드']=='move');assert float(mover['증감액'])==200000 and float(mover['증가감소TOP기준액'])==-100000 and mover['증가감소TOP기준']=='선택 가격대 기여액 증감'
+ page.select_option('#price-product-mode','up');chosen=export('price-products-csv');assert chosen[0]['상품코드']=='weighted' and float(chosen[0]['증가감소TOP기준액'])==1000000
+ assert '선택 가격대 기여액' in page.locator('#price-product-mode').inner_text()
  page.evaluate("charts[0].options.onClick({},[{index:2}],charts[0])");assert page.locator('#price-band').input_value()=='b2'
  for metric in ['rev','qty','share','unit']:
   page.select_option('#price-metric',metric);assert page.evaluate('charts.length')==2 and not page.locator('#error').inner_text()
  page.select_option('#price-band','all');page.select_option('#price-brands',['지누스','시몬스']);rows=export('price-brand-csv');assert {r['브랜드'] for r in rows}=={'지누스','시몬스'}
- page.locator('#price-all-brands').click()
+ page.locator('#price-all-brands').click();page.select_option('#price-product-mode','up');assert any(r['상품코드']=='move' and float(r['증가감소TOP기준액'])==200000 for r in export('price-products-csv'))
  for mode in ['sales','up','down','core-down','new','lost','all']:
   page.select_option('#price-product-mode',mode);assert not page.locator('#error').inner_text();rows=export('price-products-csv')
   if mode=='new':assert rows and all(r['신규매출관측']=='관측' for r in rows)

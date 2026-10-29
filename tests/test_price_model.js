@@ -28,3 +28,13 @@ const many=Array.from({length:50000},(_,i)=>row('sku-'+(i%5000),10000+(i%20)*100
 const start=performance.now(),large=P.analyze(many,many,E);const elapsed=performance.now()-start;
 assert.equal(large.totalB.qty,50000);assert.equal(large.summary.reduce((s,r)=>s+r.b,0),large.totalB.rev);assert(elapsed<5000,'100k-row aggregation exceeded 5 seconds');
 console.log('PASS: 100,000 input rows aggregated and reconciled in '+elapsed.toFixed(0)+' ms');
+// A product that grows overall can still reduce the selected band's revenue when it moves out.
+const shifted=P.analyze([row('exit',200000,1),row('stay',200000,1),row('fall',150000,1),row('enter',400000,1)],[row('exit',400000,1),row('stay',250000,1),row('fall',130000,1),row('enter',200000,1)],E);
+assert.deepEqual(P.productList(shifted,'b1','union','down').map(p=>p.key),['exit','fall']);
+assert.deepEqual(P.productList(shifted,'b1','union','up').map(p=>p.key),['enter','stay']);
+assert.deepEqual(P.productList(shifted,'all','union','up').map(p=>p.key),['exit','stay']);
+assert.deepEqual(P.productList(shifted,'all','union','down').map(p=>p.key),['enter','fall']);
+assert.equal(P.rankDelta(shifted.products.find(p=>p.key==='exit'),'b1'),-200000);
+assert.deepEqual(P.productList(shifted,'b1','current','down').map(p=>p.key),['fall']);
+assert.deepEqual(P.productList(shifted,'b1','prior','up').map(p=>p.key),['stay']);
+console.log('PASS: chosen-band growth/decline membership and rank follow band contribution; all-band ranks retain product deltas');
