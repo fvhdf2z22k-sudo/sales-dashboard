@@ -1,0 +1,30 @@
+// Run: node tests/test_price_model.js. No application data or browser dependencies.
+const assert=require('node:assert/strict');const fs=require('node:fs');const vm=require('node:vm');const path=require('node:path');global.window=global;
+vm.runInThisContext(fs.readFileSync(path.join(__dirname,'../assets/price-analysis.js'),'utf8'));
+const P=PriceAnalysis,E=P.parseEdges('10,30,50,100,200');
+const row=(id,rev,qty,more={})=>({productKey:id,pid:id,name:'상품 '+id,brand:'브랜드A',channel:'danawa',mid:'침실가구',sub:'매트리스',rev,qty,...more});
+assert.deepEqual(E,[100000,300000,500000,1000000,2000000]);
+for(const invalid of ['','0,10','30,10','10,10','-1,10','NaN,10','10,,20'])assert.throws(()=>P.parseEdges(invalid));
+for(const [value,key] of [[0,'b0'],[99999,'b0'],[100000,'b1'],[300000,'b2'],[500000,'b3'],[1000000,'b4'],[2000000,'b5'],[null,'unknown']])assert.equal(P.bandFor(value,E),key);
+const a=[row('move',100000,1),row('lost',500000,1),row('zero-before',0,0),row('negative-before',-100,1)];
+const b=[row('move',300000,1),row('new',500000,1),row('weighted',100000,1),row('weighted',900000,3),row('zero-qty',500,0),row('adjusted',10000,2),row('adjusted',-2000,-1),row('unknown',500,1,{pid:'',name:'미확인',productKey:'unknown'}),row('unknown-category',1000,1,{sub:'미확인 (16)'}),row('zero-before',100,1),row('negative-before',100,1),row('excluded',999999,1,{mid:'의자'})];
+const m=P.analyze(a,b,E);
+const expected=r=>r.filter(x=>x.mid==='침실가구').reduce((s,x)=>s+x.rev,0);assert.equal(m.totalA.rev,expected(a));assert.equal(m.totalB.rev,expected(b));
+for(const [side,qty] of [['a','qa'],['b','qb']]){assert.equal(m.summary.reduce((s,r)=>s+r[side],0),m[side==='a'?'totalA':'totalB'].rev);assert.equal(m.summary.reduce((s,r)=>s+r[qty],0),m[side==='a'?'totalA':'totalB'].qty);assert.equal(m.brandRows.reduce((s,r)=>s+r[side],0),m[side==='a'?'totalA':'totalB'].rev);}
+const weighted=m.products.find(p=>p.key==='weighted');assert.equal(weighted.current.unit,250000);assert.equal(weighted.current.band,'b1');assert.equal(weighted.b,1000000);
+assert.equal(m.products.find(p=>p.key==='adjusted').current.band,'unknown');assert.equal(m.products.find(p=>p.key==='zero-qty').current.band,'unknown');assert.equal(m.products.find(p=>p.key==='unknown-category').current.band,'unknown');
+assert.equal(m.products.find(p=>p.key==='zero-before').newObserved,true);assert.equal(m.products.find(p=>p.key==='negative-before').newObserved,false);assert.equal(m.products.find(p=>p.key==='lost').unobserved,true);
+const move=m.products.find(p=>p.key==='move');assert.equal(move.moved,true);assert.equal(move.prior.band,'b1');assert.equal(move.current.band,'b2');assert.deepEqual(P.contribution(move,'b1'),{a:100000,b:0});
+assert(P.productList(m,'b1','prior','all').some(p=>p.key==='move'));assert(!P.productList(m,'b1','current','all').some(p=>p.key==='move'));assert(P.productList(m,'b1','union','all').some(p=>p.key==='move'));
+const twoBrands=P.analyze([],[row('same',100000,1),row('same',500000,1,{brand:'브랜드B'})],E);assert.equal(twoBrands.products[0].current.unit,300000);assert.equal(twoBrands.brandRows.filter(r=>r.band==='b2').reduce((s,r)=>s+r.b,0),600000);
+const filtered=P.analyze([],[row('same',100000,1),row('same',500000,1,{brand:'브랜드B'})],E,['브랜드A']);assert.equal(filtered.totalB.rev,100000);assert.equal(filtered.products[0].current.band,'b1');
+const names=P.analyze([row('',100,1,{productKey:'',pid:'',name:'동일 이름'})],[row('',200,1,{productKey:'',pid:'',name:'동일 이름'})],E);assert.equal(names.products.length,1);
+const unidentified=P.analyze([row('',100,1,{productKey:'',pid:'',name:'미확인'})],[row('',200,1,{productKey:'',pid:'',name:'미확인'})],E);assert.equal(unidentified.products.length,2);assert(unidentified.products.every(p=>(p.prior||p.current).band==='unknown'));
+const empty=P.analyze([],[],E);assert.equal(empty.summary.length,7);assert(empty.summary.every(r=>r.a===0&&r.rate===null&&r.pa===null));
+for(const r of m.summary)if(r.volume!==null)assert(Math.abs(r.volume+r.price-r.diff)<1e-7);
+console.log('PASS: bounds, no gaps, product/year weighting, totals, negative/zero/unidentified cases, brand allocation/filtering, price moves, observed states, empty bins and decomposition');
+const {performance}=require('node:perf_hooks');
+const many=Array.from({length:50000},(_,i)=>row('sku-'+(i%5000),10000+(i%20)*1000,1,{brand:'브랜드'+i%30}));
+const start=performance.now(),large=P.analyze(many,many,E);const elapsed=performance.now()-start;
+assert.equal(large.totalB.qty,50000);assert.equal(large.summary.reduce((s,r)=>s+r.b,0),large.totalB.rev);assert(elapsed<5000,'100k-row aggregation exceeded 5 seconds');
+console.log('PASS: 100,000 input rows aggregated and reconciled in '+elapsed.toFixed(0)+' ms');

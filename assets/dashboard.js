@@ -223,7 +223,7 @@ function render(){
  if(com.missing.length)$('period-info').innerHTML+='<div class="notice warn">채널·연도 자료 누락: '+esc(com.missing.join(', '))+'. 합산 비교가 불완전할 수 있습니다.</div>';
  const beyond=outsideCoverage(c);
  if(beyond)$('period-info').innerHTML+='<div class="notice warn">선택 기간이 일부 파일의 실제 거래일 범위를 벗어납니다. 미판매와 자료 누락을 구분할 수 없으므로 공통 기간 비교를 권장합니다.</div>';
- ({overview,drivers,products,structure,quality,malls,report,season}[tab]||overview)(c);
+ ({overview,drivers,products,structure,quality,malls,report,season,price:window.priceAnalysis}[tab]||overview)(c);
  }catch(e){$('error').textContent=e.message;$('view').innerHTML='';setExport([],[]);}
 }
 $('tabs').onclick=e=>{if(e.target.dataset.tab){tab=e.target.dataset.tab;render();}};
