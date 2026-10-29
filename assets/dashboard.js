@@ -190,9 +190,14 @@ function manage(){if(!IS_EDITOR){$('view').innerHTML=panel('공개 자료 조회
 }
 function numeric(s,label){const t=String(s??'').trim().replace(/,/g,'').replace(/원$/,'');if(!t)return 0;const n=Number(t);if(!Number.isFinite(n))throw Error(label+'에 숫자가 아닌 값이 있습니다: '+t.slice(0,40));return n;}
 async function parseFile(file){
- const buffer=await file.arrayBuffer(),bytes=new Uint8Array(buffer);let rows;
+ const buffer=await file.arrayBuffer(),bytes=new Uint8Array(buffer);let rows,warnings=[];
  if(bytes[0]===0x50&&bytes[1]===0x4b||bytes[0]===0xd0&&bytes[1]===0xcf){const wb=XLSX.read(buffer,{type:'array',cellDates:true});rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:false,defval:''});}
- else{let text;try{text=new TextDecoder('utf-8',{fatal:true}).decode(buffer);}catch(e){text=new TextDecoder('euc-kr').decode(buffer);}const doc=new DOMParser().parseFromString(text,'text/html');rows=Array.from(doc.querySelectorAll('tr')).map(r=>Array.from(r.querySelectorAll('td,th')).map(x=>x.textContent.trim()));}
+ else{let text;const utf8=new TextDecoder('utf-8').decode(buffer),utf8BOM=bytes[0]===0xef&&bytes[1]===0xbb&&bytes[2]===0xbf;
+  // A malformed product-name byte must not switch a UTF-8 document to EUC-KR.
+  if(utf8BOM)text=utf8;
+  else{try{text=new TextDecoder('utf-8',{fatal:true}).decode(buffer);}catch(e){text=/<(?:th|td)\b[^>]*>\s*(?:판매액|주문액)\s*<\//i.test(utf8)?utf8:new TextDecoder('euc-kr').decode(buffer);}}
+  const damaged=(text.match(/\ufffd/g)||[]).length;if(damaged)warnings.push('원본에서 읽을 수 없는 문자가 '+damaged+'개 있어 �로 표시합니다. 상품명·상품코드 등을 원본과 확인해 주세요.');
+  const doc=new DOMParser().parseFromString(text,'text/html');rows=Array.from(doc.querySelectorAll('tr')).map(r=>Array.from(r.querySelectorAll('td,th')).map(x=>x.textContent.trim()));}
  const hi=rows.findIndex(r=>r.includes('판매액')||r.some(x=>String(x).includes('주문액')));if(hi<0)throw Error(file.name+': 판매액·주문액 헤더를 찾지 못했습니다.');const headers=rows[hi].map(x=>String(x).trim()),d=headers.includes('판매액');
  const get=(r,n)=>r[headers.indexOf(n)]??'',has=n=>headers.includes(n);
  for(const name of d?['판매액','판매량','판매일','중분류']:['주문액','주문수량','체결일','카테고리'])if(!has(name))throw Error(file.name+': 필수 컬럼 누락 ('+name+')');
@@ -201,7 +206,7 @@ async function parseFile(file){
   const dt=normalizedDate(get(r,d?'판매일':'체결일'));if(!goodDate(dt))throw Error(file.name+': '+(i+hi+2)+'행 판매일을 확인해 주세요. 합계 행은 제거해 주세요.');
   output.push(clean({channel:d?'danawa':'enuri',year:+dt.slice(0,4),date:dt,rev:numeric(get(r,d?'판매액':'주문액'),'매출'),qty:numeric(get(r,d?'판매량':'주문수량'),'수량'),brand:get(r,d?'브랜드':'제조사'),mall:String(get(r,'쇼핑몰')),name:get(r,d?'다나와상품명':'상품명')||get(r,d?'협력사 상품명':'쇼핑몰 상품명'),pid:String(get(r,d?'D코드':'에누리 모델번호')),sid:String(get(r,d?'협력사 상품코드':'상품코드')),mid:get(r,'중분류'),sub:get(r,'소분류'),det:get(r,'세분류'),cat:String(get(r,'카테고리')),reg:get(r,'등록일'),rank:numeric(get(r,'인기순위'),'인기순위'),source:file.name}));
  }
- validateRows(output);return output;
+ validateRows(output);output.warnings=warnings;return output;
 }
 const replaceKey=r=>JSON.stringify([r.channel,r.year,r.mid]);
 async function previewUpload(e){if(!IS_EDITOR)return;
@@ -211,7 +216,7 @@ async function previewUpload(e){if(!IS_EDITOR)return;
  if(new Set(files.map(f=>f.name)).size!==files.length)throw Error('동일한 이름의 파일을 중복 선택했습니다.');
  const parsed=await Promise.all(files.map(parseFile)),incoming=parsed.flat(),keys=new Set(incoming.map(replaceKey));
  const removed=data.filter(r=>keys.has(replaceKey(r))),ds=incoming.map(r=>r.date).sort();
- target.innerHTML=`<div class="notice">${files.length}개 파일 · ${incoming.length.toLocaleString()}행 · ${won(sum(incoming))}원<br>실제 판매일: ${ds[0]} ~ ${ds.at(-1)}<br>교체 대상: ${[...keys].map(esc).join(' / ')}<br>기존 ${removed.length.toLocaleString()}행 (${won(sum(removed))}원)을 교체합니다.</div><div class="filelist">${files.map(f=>esc(f.name)).join('\n')}</div><button id="apply-upload" class="primary">확인한 파일 적용</button>`;
+ target.innerHTML=`<div class="notice">${files.length}개 파일 · ${incoming.length.toLocaleString()}행 · ${won(sum(incoming))}원<br>실제 판매일: ${ds[0]} ~ ${ds.at(-1)}<br>교체 대상: ${[...keys].map(esc).join(' / ')}<br>기존 ${removed.length.toLocaleString()}행 (${won(sum(removed))}원)을 교체합니다.</div><div class="filelist">${files.map(f=>esc(f.name)).join('\n')}</div>${parsed.flatMap((rows,i)=>(rows.warnings||[]).map(w=>'<div class="notice warn">'+esc(files[i].name+': '+w)+'</div>')).join('')}<button id="apply-upload" class="primary">확인한 파일 적용</button>`;
  $('apply-upload').onclick=()=>{data=data.filter(r=>!keys.has(replaceKey(r))).concat(incoming);audit=files.map((f,i)=>({file:f.name,rows:parsed[i].length,rev:sum(parsed[i])}));const saved=saveData();setupSelectors();if(!saved)$('error').textContent='현재 화면에는 반영됐지만 브라우저 저장에 실패했습니다. JSON 백업을 내려받아 주세요.';};
  }catch(e){target.textContent='업로드 실패: '+e.message;}
 }
