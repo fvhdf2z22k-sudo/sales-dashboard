@@ -598,7 +598,7 @@ async function loadPublishedData(force=false){
  try{
   const url=new URL(PUBLIC_DATA_URL);url.searchParams.set('_t',String(Date.now()));const response=await fetch(url,{cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer'});
   if(!response.ok)throw Error('공개 자료를 불러오지 못했습니다. GitHub data/public.json과 배포 상태를 확인하세요. (HTTP '+response.status+')');
-  const text=await response.text();if(new Blob([text]).size>20*1024*1024)throw Error('공개 JSON은 20MB 이내로 준비해 주세요.');const payload=checkPublicPayload(JSON.parse(text));
+  const text=await response.text();if(new Blob([text]).size>90*1024*1024)throw Error('공개 JSON은 90MB 이내로 준비해 주세요.');const payload=checkPublicPayload(JSON.parse(text));
   const changed=text!==publishedText||!publicReady;publicReady=true;
   if(changed||force){
    const prior={};for(const id of ['channel','section','subcategory','current','previous','comparison','start','end'])prior[id]=$(id).value;
