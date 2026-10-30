@@ -643,6 +643,15 @@ function seasonAnalysis(c,selection=seasonSelection,scope=seasonScope){
  const groups=['summer','winter','mixed','other'].map(key=>{const aa=baseA.filter(r=>seasonMatchName(r.name).group===key),bb=baseB.filter(r=>seasonMatchName(r.name).group===key);return {key,a:sum(aa),b:sum(bb),qa:sum(aa,'qty'),qb:sum(bb,'qty'),rowsA:aa.length,rowsB:bb.length};});
  return {baseA,baseB,a,b,groups,ra:sum(a),rb:sum(b),qa:sum(a,'qty'),qb:sum(b,'qty')};
 }
+function seasonKeywordBrands(a,b,keyword,p,y){
+ const matching=rows=>rows.filter(r=>seasonMatchName(r.name).keywords.includes(keyword));
+ const aa=matching(a),bb=matching(b);
+ const yearly=(rows,year)=>{
+  const total=sum(rows),brands=[...group(rows,'brand')].map(([name,v])=>({name,rev:v.rev})).filter(r=>r.rev>0).sort((a,b)=>b.rev-a.rev||a.name.localeCompare(b.name,'ko')).slice(0,5);
+  return panel(year+'년 브랜드 TOP5',`<p>키워드 판매액 합계: <b>${won(total)}원</b></p>`+table(['순위','브랜드','판매액','판매액 비중'],brands.map((r,i)=>[i+1,esc(r.name),won(r.rev)+'원',total>0?(r.rev/total*100).toFixed(1)+'%':'—'])));
+ };
+ return `<p><b>${esc(keyword)} · 브랜드별 판매액 비중</b></p><small>각 연도의 해당 키워드 전체 판매액을 분모로 계산하며, TOP5 합계 기준이 아닙니다. 양수 판매액 브랜드 중 상위 5개를 표시하고 미확인 브랜드도 포함합니다. 음수 조정도 전체 판매액에 포함하므로 비중이 100%를 넘을 수 있고, 합계가 0원 이하이면 비중은 —로 표시합니다.</small><div class="grid">${yearly(aa,p)}${yearly(bb,y)}</div>`;
+}
 function season(c){
  const m=seasonAnalysis(c),{a,b,ra,rb,qa,qb}=m,diff=rb-ra;
  const sort=rows=>rows.sort(seasonOrder==='down'?(x,y)=>x.diff-y.diff:seasonOrder==='up'?(x,y)=>y.diff-x.diff:(x,y)=>y.b-x.b);
@@ -660,7 +669,15 @@ function season(c){
  panel('선택 시즌 일별 매출 · '+c.label,'<div class="chart"><canvas id="season-daily"></canvas></div>')+
  `<div class="grid">${panel('선택 시즌 브랜드별 실적',dim('brand'))}${panel('선택 시즌 쇼핑몰별 실적',dim('mall'))}</div>`+
  panel('선택 시즌 상품별 실적','<small>선택 시즌으로 분류된 판매 행만 비교합니다. 전년에 해당 시즌의 행이 없으면 0원으로 표시되며, 신규 출시·단종을 의미하지 않습니다. 같은 상품이라도 상품명·시즌 키워드가 바뀌면 전체 상품 매출 증감과 다를 수 있습니다.</small>'+table(['상품명','브랜드','채널',c.p+'년 매출',c.y+'년 매출','증감액','증감률','전년→당년 수량','전년 평균단가','당년 평균단가','전년 매칭 키워드','당년 매칭 키워드'],productRows))+
- panel('선택 시즌 키워드별 실적',`<small>한 상품명에 냉감·여름 등 여러 키워드가 있으면 각 키워드에 표시됩니다. 이 표는 서로 중복되므로 행을 합산하지 마세요.</small>`+table(['키워드',c.p+'년 매출',c.y+'년 매출','증감액','전년 수량','당년 수량'],keywords.map(r=>[r.keyword,won(r.a),won(r.b),signed(r.b-r.a),won(r.qa),won(r.qb)])));
+ panel('선택 시즌 키워드별 실적',`<small>한 상품명에 냉감·여름 등 여러 키워드가 있으면 각 키워드에 표시됩니다. 이 표는 서로 중복되므로 행을 합산하지 마세요. 키워드를 누르면 전년·당년 브랜드 TOP5와 판매액 비중을 볼 수 있습니다.</small>`+table(['키워드',c.p+'년 매출',c.y+'년 매출','증감액','전년 수량','당년 수량'],keywords.map(r=>[`<button type="button" class="season-keyword-toggle" data-keyword="${esc(r.keyword)}" aria-expanded="false">${esc(r.keyword)} <span aria-hidden="true">▾</span></button>`,won(r.a),won(r.b),signed(r.b-r.a),won(r.qa),won(r.qb)])));
+ document.querySelectorAll('.season-keyword-toggle').forEach(button=>button.onclick=()=>{
+  const row=button.closest('tr'),open=button.getAttribute('aria-expanded')==='true';
+  document.querySelectorAll('.season-keyword-detail').forEach(r=>r.remove());
+  document.querySelectorAll('.season-keyword-toggle').forEach(b=>b.setAttribute('aria-expanded','false'));
+  if(open)return;
+  button.setAttribute('aria-expanded','true');
+  row.insertAdjacentHTML('afterend',`<tr class="season-keyword-detail"><td colspan="6">${seasonKeywordBrands(a,b,button.dataset.keyword,c.p,c.y)}</td></tr>`);
+ });
  $('season-choice').onchange=e=>{seasonSelection=e.target.value;render();};$('season-scope').onchange=e=>{seasonScope=e.target.value;render();};$('season-order').onchange=e=>{seasonOrder=e.target.value;render();};
  $('season-reset-filter').onclick=()=>{const wanted='침구/커튼/카페트';if(!Array.from($('section').options).some(o=>o.value===wanted)){$('error').textContent='선택한 채널에 침구/커튼/카페트 자료가 없습니다.';return;}$('section').value=wanted;updateSubcategories();$('subcategory').value='all';render();};
  const labels=[],va=[],vb=[];for(let t=Date.parse(c.s);t<=Date.parse(c.e);t+=DAY_MS){const dt=new Date(t).toISOString().slice(0,10),pd=shiftDate(c.ps,(t-Date.parse(c.s))/DAY_MS);labels.push(dt.slice(5)+' ↔ '+pd.slice(5));va.push(sum(a.filter(r=>r.date===pd)));vb.push(sum(b.filter(r=>r.date===dt)));}
