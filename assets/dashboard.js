@@ -181,7 +181,7 @@ function quality(c){
 }
 function download(name,content,type){const a=document.createElement('a'),url=URL.createObjectURL(new Blob([content],{type}));a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function manage(){if(!IS_EDITOR){$('view').innerHTML=panel('공개 자료 조회',`<p>모든 컴퓨터에서 GitHub에 공개된 같은 자료를 읽습니다. 원본 자료를 바꾸려면 저장소 소유자의 GitHub 로그인이 필요합니다.</p><p><a href="editor.html">자료 업데이트 준비 화면</a> · <a href="https://github.com/fvhdf2z22k-sudo/sales-dashboard/upload/main/data" target="_blank" rel="noopener">GitHub에서 공개 JSON 교체</a></p><button id="public-json-download">현재 공개 자료 JSON 다운로드</button>`);$('public-json-download').onclick=()=>download('public.json',JSON.stringify(currentPayload(),null,2),'application/json');setExport([],[]);return;}
- $('view').innerHTML=panel('최신 매출 파일 업로드',`<p>다나와·에누리 XLS 파일을 함께 선택하세요. 현재와 동일한 HTML 표 형식의 XLS 및 일반 XLSX를 지원합니다. 파일의 헤더와 판매일로 채널·연도를 자동 판별합니다.</p><input type="file" id="files" multiple accept=".xls,.xlsx"><p class="muted">실수로 기존 자료를 지우지 않도록 교체 대상을 확인한 뒤 적용합니다. 같은 채널·연도·중분류의 기존 행 전체를 새 파일 묶음으로 교체하므로, 해당 분류의 파일은 한 번에 선택하세요.</p><div id="upload-preview"></div>`)+
+ $('view').innerHTML=panel('최신 매출 파일 업로드',`<p>다나와·에누리 XLS 파일을 함께 선택하세요. 현재와 동일한 HTML 표 형식의 XLS 및 일반 XLSX를 지원합니다. 파일의 헤더와 판매일로 채널·연도를 자동 판별합니다.</p><input type="file" id="files" multiple accept=".xls,.xlsx"><p class="muted">실수로 기존 자료를 지우지 않도록 교체 대상을 확인한 뒤 적용합니다. 기존 기간은 유지하고 새 날짜는 추가합니다. 업로드에 실제로 포함된 날짜의 같은 채널·연도·중분류 자료만 교체합니다. 같은 날짜·채널·연도·중분류가 여러 파일에 겹치면 중복 집계를 막기 위해 적용하지 않습니다. 해당 범위의 전체 자료를 한 파일로 준비하세요.</p><div id="upload-preview"></div>`)+
  panel('백업과 복원',`<button id="backup">전체 데이터 JSON 백업</button> <label style="display:inline-block">백업 불러오기 <input id="restore" type="file" accept=".json"></label><p>복원은 현재 데이터 전체를 대체합니다. 업로드 후에는 백업을 보관하세요. 현재 변경은 이 브라우저의 초안입니다. 공개 자료용 JSON을 내려받아 GitHub의 data/public.json을 교체해야 공개 화면에 반영됩니다.</p><button id="builtin">파일 분석 데이터 비우기</button><div id="manage-status" role="status"></div>`);
  $('files').onchange=previewUpload;$('backup').onclick=()=>download('가구침구_매출백업.json',JSON.stringify({version:30,rows:data,audit,internalSnapshots},null,2),'application/json');
  $('restore').onchange=async e=>{try{const obj=JSON.parse(await e.target.files[0].text());if(![26,27,30].includes(obj.version))throw Error('지원하는 대시보드 백업 형식이 아닙니다.');validateRows(obj.rows);if(!confirm('백업 데이터로 현재 파일 자료와 내부 카테현황을 모두 교체할까요?'))return;if(obj.internalSnapshots)validateInternal(obj.internalSnapshots);data=obj.rows.map(clean);internalSnapshots=obj.internalSnapshots||[];audit=Array.isArray(obj.audit)?obj.audit:[];saveData();setupSelectors();}catch(e){$('manage-status').textContent='복원 실패: '+e.message;}};
@@ -208,16 +208,32 @@ async function parseFile(file){
  }
  validateRows(output);output.warnings=warnings;return output;
 }
-const replaceKey=r=>JSON.stringify([r.channel,r.year,r.mid]);
+const replaceKey=r=>JSON.stringify([r.channel,r.year,r.mid,r.date]);
+function planSalesUpload(existing,batches){
+ const owners=new Map();
+ for(const [i,rows] of batches.entries())for(const key of new Set(rows.map(replaceKey))){
+  if(owners.has(key))throw Error('선택한 파일끼리 날짜·채널·연도·중분류가 겹칩니다. 해당 범위의 전체 자료를 한 파일로 준비해 주세요: '+key);
+  owners.set(key,i);
+ }
+ const incoming=batches.flat();if(!incoming.length)throw Error('업로드할 매출 행이 없습니다.');
+ const keys=new Set(owners.keys()),removed=[],retained=[];
+ for(const row of existing)(keys.has(replaceKey(row))?removed:retained).push(row);
+ const rows=retained.concat(incoming);validateRows(rows);
+ return {incoming,keys,removed,retained,rows};
+}
+function salesAudit(rows){
+ const files=new Map();for(const row of rows){const file=row.source||'출처 미확인';if(!files.has(file))files.set(file,{file,rows:0,rev:0});const entry=files.get(file);entry.rows++;entry.rev+=row.rev;}
+ return [...files.values()];
+}
 async function previewUpload(e){if(!IS_EDITOR)return;
  const target=$('upload-preview');target.textContent='파일을 읽고 검증하고 있습니다…';
  try{
  const files=Array.from(e.target.files);if(!files.length){target.textContent='';return;}
  if(new Set(files.map(f=>f.name)).size!==files.length)throw Error('동일한 이름의 파일을 중복 선택했습니다.');
- const parsed=await Promise.all(files.map(parseFile)),incoming=parsed.flat(),keys=new Set(incoming.map(replaceKey));
- const removed=data.filter(r=>keys.has(replaceKey(r))),ds=incoming.map(r=>r.date).sort();
- target.innerHTML=`<div class="notice">${files.length}개 파일 · ${incoming.length.toLocaleString()}행 · ${won(sum(incoming))}원<br>실제 판매일: ${ds[0]} ~ ${ds.at(-1)}<br>교체 대상: ${[...keys].map(esc).join(' / ')}<br>기존 ${removed.length.toLocaleString()}행 (${won(sum(removed))}원)을 교체합니다.</div><div class="filelist">${files.map(f=>esc(f.name)).join('\n')}</div>${parsed.flatMap((rows,i)=>(rows.warnings||[]).map(w=>'<div class="notice warn">'+esc(files[i].name+': '+w)+'</div>')).join('')}<button id="apply-upload" class="primary">확인한 파일 적용</button>`;
- $('apply-upload').onclick=()=>{data=data.filter(r=>!keys.has(replaceKey(r))).concat(incoming);audit=files.map((f,i)=>({file:f.name,rows:parsed[i].length,rev:sum(parsed[i])}));const saved=saveData();setupSelectors();if(!saved)$('error').textContent='현재 화면에는 반영됐지만 브라우저 저장에 실패했습니다. JSON 백업을 내려받아 주세요.';};
+ const parsed=await Promise.all(files.map(parseFile)),plan=planSalesUpload(data,parsed),{incoming,keys,removed,retained}=plan;
+ const ds=incoming.map(r=>r.date).sort();
+ target.innerHTML=`<div class="notice">${files.length}개 파일 · ${incoming.length.toLocaleString()}행 · ${won(sum(incoming))}원<br>실제 판매일: ${ds[0]} ~ ${ds.at(-1)}<br>날짜·채널·연도·중분류 ${keys.size.toLocaleString()}개 범위만 적용<br>겹치는 기존 ${removed.length.toLocaleString()}행 (${won(sum(removed))}원)을 교체하고 새 파일 ${incoming.length.toLocaleString()}행을 반영합니다.<br>나머지 기존 ${retained.length.toLocaleString()}행 (${won(sum(retained))}원)은 유지합니다.</div><div class="filelist">${files.map(f=>esc(f.name)).join('\n')}</div>${parsed.flatMap((rows,i)=>(rows.warnings||[]).map(w=>'<div class="notice warn">'+esc(files[i].name+': '+w)+'</div>')).join('')}<button id="apply-upload" class="primary">확인한 파일 적용</button>`;
+ $('apply-upload').onclick=()=>{data=plan.rows;audit=salesAudit(data);const saved=saveData();setupSelectors();if(!saved)$('error').textContent='현재 화면에는 반영됐지만 브라우저 저장에 실패했습니다. JSON 백업을 내려받아 주세요.';};
  }catch(e){target.textContent='업로드 실패: '+e.message;}
 }
 function render(){
