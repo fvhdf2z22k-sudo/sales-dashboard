@@ -16,7 +16,7 @@ with sync_playwright() as p:
   path=unquote(urlparse(route.request.url).path).removeprefix('/sales-dashboard/') or 'index.html'
   if path=='data/public.json':route.fulfill(json=payload);return
   file=(ROOT/path).resolve();assert file.is_relative_to(ROOT);route.fulfill(path=str(file),content_type='text/javascript' if path.endswith('.js') else 'text/html')
- page.route('http://dashboard.test/sales-dashboard/**',serve);page.goto('http://dashboard.test/sales-dashboard/');page.wait_for_function('()=>publicReady');page.locator('[data-tab="season"]').click()
+ page.route('http://dashboard.test/sales-dashboard/**',serve);page.goto('http://dashboard.test/sales-dashboard/');page.wait_for_function('()=>publicReady');page.locator('[data-tab="season"]').click();page.select_option('#season-period-mode','compare')
  for name,expected in [('냉감 쿨 시어서커 여름','summer'),('구스 극세사 겨울 울 양모','winter'),('냉감 구스','mixed'),('서울 울트라 방울 거울 저울 울산 울릉 울타리','other'),('겨울','winter'),('메리노울','winter'),('일반 면이불','other')]:
   assert page.evaluate('(n)=>seasonMatchName(n).group',name)==expected,name
  matched=page.evaluate('seasonAnalysis(lastContext,"all","bedding")')
