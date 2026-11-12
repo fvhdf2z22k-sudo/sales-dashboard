@@ -45,7 +45,7 @@ with sync_playwright() as p:
  for ch in ['all','danawa','enuri']:
   page.select_option('#channel',ch);page.select_option('#section','침구/커튼/카페트');page.select_option('#subcategory',label='침구')
   for selection in ['summer','winter','mixed','all']:
-   page.select_option('#season-choice',selection);assert not page.locator('#error').inner_text();actual=page.evaluate('seasonAnalysis(lastContext)');assert abs(sum(r['b'] for r in actual['groups'])-sum(r['rev'] for r in actual['baseB']))<.01
+   page.select_option('#season-choice',selection);assert not page.locator('#error').inner_text();actual=page.evaluate('()=>{const r=seasonAnalysis(lastContext);return {groups:r.groups.reduce((s,g)=>s+g.b,0),total:sum(r.baseB)};}');assert abs(actual['groups']-actual['total'])<.01
  for tab in ['overview','malls','products','structure','report','internal','quality','season']:
   page.locator('[data-tab="'+tab+'"]').click();assert not page.locator('#error').inner_text()
  assert not errors,errors
