@@ -342,7 +342,7 @@ function reportProduct(r,c){
  return [`• ${r.sample.name} / ${r.sample.brand} / ${cname(r.sample.channel)}`,
  `  매출: ${reportMove(r.a,r.b)}`,
  `  판매수량: ${reportMove(r.qa,r.qb,'개')}`,
- `  평균 판매단가: ${reportAveragePrice(r.a,r.b,r.qa,r.qb)}`,
+ `  평균 판매단가: ${reportMove(pa,pb)}`,
  `  매출 증감 분해: 수량 효과 ${signed(vol)}원 + 단가 효과 ${signed(price)}원 = ${signed(r.diff)}원`,
  `  해석: ${comment}`,
  `  매칭: ${r.sample.matchType}${r.sample.pid||r.sample.sid?' '+(r.sample.pid||r.sample.sid):' (이름 일치 기준이므로 동일성 추가 확인 필요)'}`].join('\n');
@@ -359,9 +359,8 @@ function makeDetailedReport(c,options){
  section('1. 전체 실적');
  lines.push(`매출: ${reportMove(ra,rb)}`);
  lines.push(`판매수량: ${reportMove(qa,qb,'개')}`);
- lines.push(`평균 판매단가: ${reportAveragePrice(ra,rb,qa,qb)}`);
- if(qa>0&&qb>0){const vol=(qb-qa)*(ra/qa),price=delta-vol;lines.push(`매출 증감 ${signed(delta)}원 = 판매수량 변화 효과 ${signed(vol)}원 + 평균단가 변화 효과 ${signed(price)}원`);}
- else lines.push('매출 분해: 양년 수량이 양수일 때 계산합니다.');
+ if(qa>0&&qb>0){lines.push(`평균 판매단가: ${reportMove(ra/qa,rb/qb)}`);const vol=(qb-qa)*(ra/qa),price=delta-vol;lines.push(`매출 증감 ${signed(delta)}원 = 판매수량 변화 효과 ${signed(vol)}원 + 평균단가 변화 효과 ${signed(price)}원`);}
+ else lines.push('평균 판매단가·매출 분해: 양년 수량이 양수일 때 계산합니다.');
  const summaries={};
  for(const [key,label] of [['brand','브랜드'],['mall','쇼핑몰']]){
   section((key==='brand'?'2. ':'3. ')+label+'별 증가·감소 원인');
@@ -376,7 +375,7 @@ function makeDetailedReport(c,options){
     const state=r.state==='양년 판매'?'':r.state==='선택 기간 신규 판매'?' / 자료 내 당년만 판매':' / 자료 내 당년 판매 없음';
     const contrib=ra>0?` / 전체 성장 기여도 ${(r.diff/ra*100>=0?'+':'')+(r.diff/ra*100).toFixed(2)}%p`:'';
     lines.push(`${i+1}) ${r.key}: ${reportMove(r.a,r.b)}${contrib}${state}`);
-    lines.push(`   수량 ${won(r.qa)}개 → ${won(r.qb)}개 / 평균 판매단가: ${reportAveragePrice(r.a,r.b,r.qa,r.qb)}`);
+    lines.push(`   수량 ${won(r.qa)}개 → ${won(r.qb)}개${r.qa>0&&r.qb>0?` / 평균단가 ${won(r.a/r.qa)}원 → ${won(r.b/r.qb)}원`:''}`);
    });
    const shown=list.slice(0,top).reduce((s,r)=>s+r.diff,0),rest=list.slice(top).reduce((s,r)=>s+r.diff,0);
    if(list.length>top)lines.push(`표시 ${Math.min(top,list.length)}개 증감 합계 ${signed(shown)}원 / 나머지 ${list.length-top}개 증감 합계 ${signed(rest)}원`);
@@ -396,7 +395,7 @@ function makeDetailedReport(c,options){
  const patterns=[['평균단가 하락·판매수량 증가',r=>r.b/r.qb<r.a/r.qa*.99&&r.qb>r.qa*1.01],['평균단가 상승·판매수량 감소',r=>r.b/r.qb>r.a/r.qa*1.01&&r.qb<r.qa*.99],['평균단가·판매수량 모두 하락',r=>r.b/r.qb<r.a/r.qa*.99&&r.qb<r.qa*.99],['평균단가·판매수량 모두 상승',r=>r.b/r.qb>r.a/r.qa*1.01&&r.qb>r.qa*1.01]];
  for(const [label,fn] of patterns){
   const rs=eligible.filter(fn).sort((x,y)=>Math.abs(y.diff)-Math.abs(x.diff));lines.push(`\n${label}: ${rs.length}개 (변화율 각각 1% 초과 기준)`);
-  rs.slice(0,top).forEach(r=>lines.push(`• ${r.sample.name} (${cname(r.sample.channel)}): 평균 판매단가 ${reportAveragePrice(r.a,r.b,r.qa,r.qb)} / 수량 ${reportPct(r.qa,r.qb)} / 매출 ${signed(r.diff)}원`));
+  rs.slice(0,top).forEach(r=>lines.push(`• ${r.sample.name} (${cname(r.sample.channel)}): 평균단가 ${reportPct(r.a/r.qa,r.b/r.qb)} / 수량 ${reportPct(r.qa,r.qb)} / 매출 ${signed(r.diff)}원`));
  }
  section('6. 확인할 항목');
  const worstBrand=summaries.brand.down[0],worstMall=summaries.mall.down[0];
@@ -547,7 +546,7 @@ function compactMoney(n){const abs=Math.abs(n),prefix=n<0?'-':'';if(abs>=1e8)ret
 function compactSigned(n){return (n>0?'+':'')+compactMoney(n);}
 function categoryDrivers(a,b,key,top){
  const rows=compare(a,b,key),up=rows.filter(r=>r.diff>0).sort((x,y)=>y.diff-x.diff||String(x.key).localeCompare(String(y.key),'ko')),down=rows.filter(r=>r.diff<0).sort((x,y)=>x.diff-y.diff||String(x.key).localeCompare(String(y.key),'ko'));
- const item=r=>`${r.key}(${r.rowsA.length===0?'당년만 판매':r.rowsB.length===0?'당년 판매 없음':reportPct(r.a,r.b)}, ${compactSigned(r.diff)}) / 평균 판매단가: ${reportAveragePrice(r.a,r.b,r.qa,r.qb)}`;
+ const item=r=>`${r.key}(${r.rowsA.length===0?'당년만 판매':r.rowsB.length===0?'당년 판매 없음':reportPct(r.a,r.b)}, ${compactSigned(r.diff)})`;
  const format=list=>{if(!list.length)return '해당 없음';const shown=list.slice(0,top).map(item),rest=list.slice(top);if(rest.length)shown.push(`외 ${rest.length}개 ${key==='brand'?'브랜드':'쇼핑몰'}(${compactSigned(rest.reduce((s,r)=>s+r.diff,0))})`);return shown.join(', ');};
  return {rows,up,down,upText:format(up),downText:format(down)};
 }
@@ -556,7 +555,6 @@ function categoryNode(a,b,name,depth,top){
  if(depth===0)lines.push(`${name} YoY ${reportPct(ra,rb)}, ${compactSigned(diff)}`);
  else lines.push(`${prefix}${depth===1?'■':'※'} ${name} YoY ${reportPct(ra,rb)}, ${compactSigned(diff)}`);
  lines.push(`${prefix}전체: ${compactMoney(ra)} → ${compactMoney(rb)} | 판매량 ${won(qa)}개 → ${won(qb)}개 (${signed(qb-qa)}개, ${reportPct(qa,qb)})`);
- lines.push(`${prefix}◆ 평균 판매단가: ${reportAveragePrice(ra,rb,qa,qb)}`);
  const brand=categoryDrivers(a,b,'brand',top),mall=categoryDrivers(a,b,'mall',top);
  lines.push(`${prefix}▲ 브랜드 증가: ${brand.upText}`,`${prefix}▼ 브랜드 감소: ${brand.downText}`,`${prefix}▲ 쇼핑몰 증가: ${mall.upText}`,`${prefix}▼ 쇼핑몰 감소: ${mall.downText}`);
  let decomposition=null;
@@ -565,6 +563,7 @@ function categoryNode(a,b,name,depth,top){
   let verdict;if(vol*price<0)verdict='판매량 변화와 평균단가 변화의 영향이 반대 방향(일부 상쇄)';else if(vol===0&&price===0)verdict='매출 변화 없음';else if(Math.abs(vol)>=Math.abs(price)*1.8)verdict=vol>=0?'판매량 증가가 주원인':'판매량 감소가 주원인';else if(Math.abs(price)>=Math.abs(vol)*1.8)verdict=price>=0?'평균단가 상승이 주원인':'평균단가 하락이 주원인';else verdict='판매량과 평균단가 변화가 함께 작용';
   decomposition={vol,price,diff};lines.push(`${prefix}◈ 매출 분해: ${compactSigned(diff)} = 판매량 변화 ${compactSigned(vol)} + 평균단가 변화 ${compactSigned(price)} → ${verdict} (상품 구성 변화 포함)`);
  }else lines.push(`${prefix}◈ 매출 분해: 양년의 유효한 판매수량·매출이 부족하거나 음수 조정액이 있어 해석하지 않음`);
+ lines.push(`${prefix}  전체 평균 판매단가: ${reportAveragePrice(ra,rb,qa,qb)}`);
  const ca=structureRanking(a,'brand',5),cb=structureRanking(b,'brand',5);if(ca.share!==null&&cb.share!==null){const d=cb.share-ca.share;lines.push(`${prefix}▣ 집중도: 상위 5개 브랜드 비중 ${ca.share.toFixed(1)}% → ${cb.share.toFixed(1)}% (${d>=0?'+':''}${d.toFixed(1)}%p${d>=3?' · 쏠림 심화':d<=-3?' · 분산':''}; 양수 매출 기준)`);}
  return {name,depth,ra,rb,qa,qb,diff,brand,mall,decomposition,lines};
 }
@@ -577,7 +576,7 @@ function seasonReportLines(c,options={}){
   const aa=a.filter(r=>r.channel===channel&&r.sub==='침구'),bb=b.filter(r=>r.channel===channel&&r.sub==='침구');
   const totalA=sum(fullBedding.filter(r=>r.channel===channel&&r.date>=c.ps&&r.date<=c.pe)),totalB=sum(fullBedding.filter(r=>r.channel===channel&&r.date>=c.s&&r.date<=c.e));
   const share=(rev,total)=>total>0?(rev/total*100).toFixed(1)+'%':'—';
-  const stats=(ra,rb)=>{const va=sum(ra),vb=sum(rb),qa=sum(ra,'qty'),qb=sum(rb,'qty');return `거래액 ${compactMoney(va)} → ${compactMoney(vb)} (YoY ${reportPct(va,vb)}, ${compactSigned(vb-va)}) | 전체 침구 대비 ${share(va,totalA)} → ${share(vb,totalB)}${totalA>0&&totalB>0?' ('+((vb/totalB-va/totalA)*100>=0?'+':'')+((vb/totalB-va/totalA)*100).toFixed(1)+'%p)':''} | 판매량 ${won(qa)}개 → ${won(qb)}개 | 평균 판매단가: ${reportAveragePrice(va,vb,qa,qb)}`;};
+  const stats=(ra,rb)=>{const va=sum(ra),vb=sum(rb),qa=sum(ra,'qty'),qb=sum(rb,'qty');return `거래액 ${compactMoney(va)} → ${compactMoney(vb)} (YoY ${reportPct(va,vb)}, ${compactSigned(vb-va)}) | 전체 침구 대비 ${share(va,totalA)} → ${share(vb,totalB)}${totalA>0&&totalB>0?' ('+((vb/totalB-va/totalA)*100>=0?'+':'')+((vb/totalB-va/totalA)*100).toFixed(1)+'%p)':''} | 판매량 ${won(qa)}개 → ${won(qb)}개`;};
   lines.push(`[${cname(channel)}] 침구 시즌 키워드 분석`, `기간: 전년 ${c.ps} ~ ${c.pe} / 당년 ${c.s} ~ ${c.e}`,`전체 침구 거래액 (비중 분모): ${compactMoney(totalA)} → ${compactMoney(totalB)}`);
   if(!aa.length&&!bb.length){lines.push('선택한 보고서 조건에 해당하는 침구 판매 자료가 없어 시즌 키워드 분석을 생략합니다.','');continue;}
   lines.push('시즌 키워드는 상품명에서 찾습니다. 여름·겨울·혼합은 서로 겹치지 않게 나누며, 비중은 같은 채널·쇼핑몰·기간의 전체 침구 거래액 기준입니다. 일반 침구도 분모에 포함하고, 소분류 선택으로 분모를 줄이지 않습니다.');
@@ -646,7 +645,7 @@ function analyzeSameNames(c,options={}){
   if(!rs.length)lines.push('조건에 해당하는 상품 없음');
   for(const r of rs.slice(0,top)){
    lines.push(`• ${r.name} / ${r.sample.brand} / ${cname(r.sample.channel)} / ${r.sample.mid} > ${r.sample.sub}`,
-    `  평균 판매단가: ${reportAveragePrice(r.a,r.b,r.qa,r.qb)}`,
+    `  평균 판매단가: ${reportMove(r.pa,r.pb)}`,
     `  판매량: ${reportMove(r.qa,r.qb,'개')}`,
     `  판매액: ${reportMove(r.a,r.b)}`);
    const vol=(r.qb-r.qa)*r.pa,price=(r.pb-r.pa)*r.qb;
