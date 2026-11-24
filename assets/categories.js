@@ -12,3 +12,10 @@ function _decodeCatStr(value){
  return {major:validMajor?'가구':unknown(major),mid:mn||unknown(mid),sub:sn||unknown(sub),det:dn||unknown(det),parts,known:!!(validMajor&&mn&&sn&&dn)};
 }
 
+// Only fill an explicitly unspecified bed detail; registered codes retain priority.
+function _bedSizeFromName(code,name){
+ if(String(code??'').trim()!=='12021100')return null;
+ const sizes=new Set([...String(name??'').toUpperCase().matchAll(/(?:^|[^A-Z0-9])(SS|Q|D|K|S)(?=$|[^A-Z0-9])/g)].map(m=>m[1]));
+ const labels={SS:'슈퍼싱글(SS)',Q:'퀸(Q)',D:'더블(D)',K:'킹(K)',S:'싱글(S)'};
+ return sizes.size===1?labels[[...sizes][0]]:null;
+}

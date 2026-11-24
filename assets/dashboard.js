@@ -14,7 +14,8 @@ function clean(r){
  const x={...r};x.date=normalizedDate(x.date);x.reg=normalizedDate(x.reg);x.year=goodDate(x.date)?+x.date.slice(0,4):+x.year;
  if(x.channel==='enuri'){
   const c=_decodeCatStr(String(x.cat));x.mid=c.mid;x.sub=c.sub;x.det=c.det;
-  x.major=c.major;x.catParts=c.parts;x.categoryKnown=c.known;
+  const size=_bedSizeFromName(x.cat,x.name);if(size)x.det=size;
+  x.major=c.major;x.catParts=c.parts;x.categoryKnown=c.known||!!size;x.categoryBasis=size?'상품명 크기 보완':'원본 코드';
   const malls={536:'G마켓',4027:'옥션',5910:'11번가',7861:'쿠팡',47:'신세계몰',49:'롯데ON',663:'롯데홈쇼핑',57:'현대Hmall',75:'GS SHOP',6252:'하이마트',29297:'오늘의집'};
   x.mall=malls[x.mall]||x.mall||'미확인';
  }
@@ -315,8 +316,8 @@ function malls(c){
  setExport(['쇼핑몰','전년매출','당년매출','증감액','전년수량','당년수량','전년비중(%)','당년비중(%)'],all.map(r=>[r.key,r.a,r.b,r.diff,r.qa,r.qb,share(r.a,c.ra),share(r.b,c.rb)]));
 }
 function categoryAudit(c){
- const rows=[...group(c.a.concat(c.b).filter(r=>r.channel==='enuri'),'cat').values()].sort((a,b)=>b.rev-a.rev);
- return panel('에누리 카테고리 코드 대조',`<p>코드를 왼쪽부터 두 자리씩 읽습니다. 이름은 상위 분류와 함께 판별합니다. 알려주신 표에 없는 코드는 추정하지 않고 미확인으로 남기며, 해당 매출은 합계에 포함합니다. 중분류 침대/매트리스는 채널 합산을 위해 상단 필터에서 침실가구로 묶습니다.</p><small>커튼은 소분류 01·08 모두 하위 00을 커튼/블라인드로 처리합니다. 4·6자리 코드처럼 하위 코드가 없으면 코드 없음으로 표시합니다. 상품명에서 침대 사이즈를 추정하지 않습니다.</small>`+table(['원본 코드','두 자리 구분','대분류','중분류','소분류','미분류','행 수','양년 선택기간 매출','상태'],rows.map(r=>{const x=_decodeCatStr(r.key);return [esc(r.key),esc(x.parts.join(' / ')),esc(x.major),esc(x.mid),esc(x.sub),esc(x.det),won(r.rows.length),won(r.rev),x.known?'확인':'미확인·누락'];})));
+ const rows=[...group(c.a.concat(c.b).filter(r=>r.channel==='enuri'),r=>JSON.stringify([r.cat,r.det,r.categoryBasis])).values()].sort((a,b)=>b.rev-a.rev);
+ return panel('에누리 카테고리 코드 대조',`<p>코드를 왼쪽부터 두 자리씩 읽습니다. 이름은 상위 분류와 함께 판별합니다. 원본 코드는 보존하며, 미확인 매출도 합계에 포함합니다. 중분류 침대/매트리스는 채널 합산을 위해 상단 필터에서 침실가구로 묶습니다.</p><small>침대 코드 12021100은 상품명에 단독으로 표시된 SS·Q·D·K·S를 각각 슈퍼싱글·퀸·더블·킹·싱글로 보완합니다. 크기가 없거나 여러 크기가 있으면 미확인으로 유지하며, 이미 확인된 코드는 우선합니다. 원본 세부 분류와 분석 적용 분류를 구분해 표시합니다. 커튼은 소분류 01·08 모두 하위 00을 커튼/블라인드로 처리합니다. 4·6자리 코드처럼 하위 코드가 없으면 코드 없음으로 표시합니다.</small>`+table(['원본 코드','두 자리 구분','대분류','중분류','소분류','원본 세부 분류','분석 적용 세부 분류','분류 근거','행 수','양년 선택기간 매출','상태'],rows.map(r=>{const x=_decodeCatStr(r.sample.cat);return [esc(r.sample.cat),esc(x.parts.join(' / ')),esc(x.major),esc(x.mid),esc(x.sub),esc(x.det),esc(r.sample.det),esc(r.sample.categoryBasis),won(r.rows.length),won(r.rev),r.sample.categoryBasis==='상품명 크기 보완'?'상품명으로 보완':x.known?'확인':'미확인·누락'];})));
 }
 
 let reportMall='all',reportTop=5,reportMinQty=3,reportText='',reportFormat='category',reportIncludeDetails=true,reportIncludeProducts=true,reportFlatPct=5;
