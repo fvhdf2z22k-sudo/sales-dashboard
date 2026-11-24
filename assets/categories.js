@@ -19,3 +19,14 @@ function _bedSizeFromName(code,name){
  const labels={SS:'슈퍼싱글(SS)',Q:'퀸(Q)',D:'더블(D)',K:'킹(K)',S:'싱글(S)'};
  return sizes.size===1?labels[[...sizes][0]]:null;
 }
+// User-defined product-name rules only supplement unresolved Enuri classifications.
+function _categoryFromName(code,name){
+ const c=_decodeCatStr(code),text=String(name??''),compact=text.replace(/[\s\-_/·]/g,'');
+ if(c.known||c.major!=='가구')return null;
+ if(c.mid==='침구/커튼/카페트'){
+  if(text.includes('베개'))return {sub:'침구',det:'베개',basis:'상품명 베개 보완'};
+  if(/이불|침구|양모.*세트/.test(compact))return {sub:'침구',det:'이불/패드/커버',basis:'상품명 침구 보완'};
+ }
+ if(c.mid==='침대/매트리스'&&/돌소파|돌쇼파|흙침대|흙소파|흙쇼파/.test(compact))return {sub:'침대',det:'돌/침대.소파',basis:'상품명 돌·흙 침대/소파 보완'};
+ return null;
+}
