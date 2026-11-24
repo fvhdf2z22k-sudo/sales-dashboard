@@ -24,13 +24,19 @@ function _categoryFromName(code,name){
  const c=_decodeCatStr(code),text=String(name??''),compact=text.replace(/[\s\-_/·]/g,'');
  if(c.known||c.major!=='가구')return null;
  if(c.mid==='침구/커튼/카페트'){
-  if(/롤스크린|블라인드/.test(compact))return {sub:'커튼/블라인드',det:'커튼/블라인드',basis:'상품명 롤스크린·블라인드 보완'};
+  if(/커튼|롤스크린|블라인드/.test(compact))return {sub:'커튼/블라인드',det:'커튼/블라인드',basis:'상품명 롤스크린·블라인드 보완'};
+  if(/카페트|카펫|카페뜨|러그|주방매트|현관매트/.test(compact))return {sub:'카페트/대자리',det:'카페트/대자리',basis:'상품명 카페트·러그·매트 보완'};
   if(/차렵이불|(?:이불|침구).*세트/.test(compact))return {sub:'침구',det:'이불/패드/커버',basis:'상품명 침구 세트 보완'};
-  if(text.includes('베개'))return {sub:'침구',det:'베개',basis:'상품명 베개 보완'};
-  if(/이불|침구|양모.*세트/.test(compact))return {sub:'침구',det:'이불/패드/커버',basis:'상품명 침구 보완'};
+  if(/베개|목침|바디필로우|롱쿠션/.test(compact))return {sub:'침구',det:'베개',basis:'상품명 베개 보완'};
+  if((/이불|침구|패드|커버|요토퍼|요커버|요솜|솜매트|양모.*세트/.test(compact)||/(?:^|[^가-힣])요(?=$|[^가-힣])/.test(text)))return {sub:'침구',det:'이불/패드/커버',basis:'상품명 침구 보완'};
  }
  if(c.mid==='침대/매트리스'&&/모션매트리스|모션베드|모션배드/.test(compact))return {sub:'침대',det:'모션베드',basis:'상품명 모션베드 보완'};
  if(c.mid==='침대/매트리스'&&/돌소파|돌쇼파|흙침대|흙소파|흙쇼파/.test(compact))return {sub:'침대',det:'돌/침대.소파',basis:'상품명 돌·흙 침대/소파 보완'};
- if(c.mid==='침대/매트리스'&&/(?:^|[^A-Z0-9])(?:SS|Q|D|K|S)\s*\+\s*(?:SS|Q|D|K|S)(?=$|[^A-Z0-9])/i.test(text))return {sub:'침대',det:'패밀리침대',basis:'상품명 결합 크기 보완'};
+ if(c.mid==='침대/매트리스'&&/(?:^|[^A-Z0-9])(?:XS|SS|Q|D|K|S)\s*\+\s*(?:XS|SS|Q|D|K|S)(?=$|[^A-Z0-9])/i.test(text))return {sub:'침대',det:'패밀리침대',basis:'상품명 결합 크기 보완'};
+ if(c.mid==='침대/매트리스'){
+  const sizes=new Set([...text.toUpperCase().matchAll(/(?:^|[^A-Z0-9])(XS|SS|Q|D|K|S)(?=$|[^A-Z0-9])/g)].map(m=>m[1]));
+  if((c.sub==='침대'||(c.sub!=='매트리스'&&text.includes('침대')))&&/(?:^|[^A-Z0-9])Q\s*\/\s*K(?=$|[^A-Z0-9])/i.test(text)&&sizes.size===2&&sizes.has('Q')&&sizes.has('K'))return {sub:'침대',det:'킹(K)',basis:'상품명 Q/K 킹 보완'};
+  if(sizes.size===1&&sizes.has('XS'))return {sub:c.sub==='매트리스'?'매트리스':'침대',det:'싱글(S)',basis:'상품명 XS 싱글 보완'};
+ }
  return null;
 }
