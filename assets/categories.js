@@ -24,9 +24,13 @@ function _categoryFromName(code,name){
  const c=_decodeCatStr(code),text=String(name??''),compact=text.replace(/[\s\-_/·]/g,'');
  if(c.known||c.major!=='가구')return null;
  if(c.mid==='침구/커튼/카페트'){
+  if(/롤스크린|블라인드/.test(compact))return {sub:'커튼/블라인드',det:'커튼/블라인드',basis:'상품명 롤스크린·블라인드 보완'};
+  if(/차렵이불|(?:이불|침구).*세트/.test(compact))return {sub:'침구',det:'이불/패드/커버',basis:'상품명 침구 세트 보완'};
   if(text.includes('베개'))return {sub:'침구',det:'베개',basis:'상품명 베개 보완'};
   if(/이불|침구|양모.*세트/.test(compact))return {sub:'침구',det:'이불/패드/커버',basis:'상품명 침구 보완'};
  }
+ if(c.mid==='침대/매트리스'&&/모션매트리스|모션베드|모션배드/.test(compact))return {sub:'침대',det:'모션베드',basis:'상품명 모션베드 보완'};
  if(c.mid==='침대/매트리스'&&/돌소파|돌쇼파|흙침대|흙소파|흙쇼파/.test(compact))return {sub:'침대',det:'돌/침대.소파',basis:'상품명 돌·흙 침대/소파 보완'};
+ if(c.mid==='침대/매트리스'&&/(?:^|[^A-Z0-9])(?:SS|Q|D|K|S)\s*\+\s*(?:SS|Q|D|K|S)(?=$|[^A-Z0-9])/i.test(text))return {sub:'침대',det:'패밀리침대',basis:'상품명 결합 크기 보완'};
  return null;
 }
